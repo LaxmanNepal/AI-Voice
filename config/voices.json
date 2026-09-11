@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "voices": [],
+  "engines": [
+    {
+      "id": "browser",
+      "name": "Browser SpeechSynthesis",
+      "type": "browser",
+      "languages": ["browser-dependent"],
+      "license": "browser-runtime"
+    },
+    {
+      "id": "local-neural",
+      "name": "Local Neural TTS",
+      "type": "fastapi",
+      "languages": [],
+      "license": "model-dependent"
+    }
+  ],
+  "model_policy": {
+    "require_license_metadata": true,
+    "require_checksum": true,
+    "allow_unverified_weights": false
+  }
+}
