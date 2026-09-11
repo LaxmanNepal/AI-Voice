@@ -1,25 +1,28 @@
 {
-  "schema_version": 1,
-  "voices": [],
-  "engines": [
-    {
-      "id": "browser",
-      "name": "Browser SpeechSynthesis",
-      "type": "browser",
-      "languages": ["browser-dependent"],
-      "license": "browser-runtime"
-    },
-    {
-      "id": "local-neural",
-      "name": "Local Neural TTS",
-      "type": "fastapi",
-      "languages": [],
-      "license": "model-dependent"
-    }
+  "schema_version": 2,
+  "voices": [
+    {"id":"af_sarah","name":"Sarah","language":"en-us","engine":"kokoro-onnx"},
+    {"id":"af_bella","name":"Bella","language":"en-us","engine":"kokoro-onnx"},
+    {"id":"af_nicole","name":"Nicole","language":"en-us","engine":"kokoro-onnx"},
+    {"id":"af_sky","name":"Sky","language":"en-us","engine":"kokoro-onnx"},
+    {"id":"am_adam","name":"Adam","language":"en-us","engine":"kokoro-onnx"},
+    {"id":"am_michael","name":"Michael","language":"en-us","engine":"kokoro-onnx"},
+    {"id":"bf_emma","name":"Emma","language":"en-gb","engine":"kokoro-onnx"},
+    {"id":"bf_isabella","name":"Isabella","language":"en-gb","engine":"kokoro-onnx"},
+    {"id":"bm_george","name":"George","language":"en-gb","engine":"kokoro-onnx"},
+    {"id":"bm_lewis","name":"Lewis","language":"en-gb","engine":"kokoro-onnx"},
+    {"id":"ff_siwis","name":"Siwis","language":"fr-fr","engine":"kokoro-onnx"},
+    {"id":"if_sara","name":"Sara","language":"it","engine":"kokoro-onnx"},
+    {"id":"im_nicola","name":"Nicola","language":"it","engine":"kokoro-onnx"},
+    {"id":"jf_alpha","name":"Alpha","language":"ja","engine":"kokoro-onnx"},
+    {"id":"jf_gongitsune","name":"Gongitsune","language":"ja","engine":"kokoro-onnx"},
+    {"id":"zf_xiaobei","name":"Xiaobei","language":"cmn","engine":"kokoro-onnx"},
+    {"id":"zf_xiaoni","name":"Xiaoni","language":"cmn","engine":"kokoro-onnx"},
+    {"id":"zm_yunjian","name":"Yunjian","language":"cmn","engine":"kokoro-onnx"}
   ],
-  "model_policy": {
-    "require_license_metadata": true,
-    "require_checksum": true,
-    "allow_unverified_weights": false
-  }
+  "engines": [
+    {"id":"browser","name":"Browser SpeechSynthesis","type":"browser","license":"browser-runtime"},
+    {"id":"kokoro-onnx","name":"Kokoro ONNX","type":"local-neural","license":"Apache-2.0 model; MIT adapter"}
+  ],
+  "model_policy": {"require_license_metadata":true,"require_checksum":true,"allow_unverified_weights":false}
 }
