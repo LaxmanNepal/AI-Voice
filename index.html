@@ -1,56 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="Laxman AI Voice — open, self-hosted text to speech studio.">
-  <title>Laxman AI Voice</title>
-  <link rel="stylesheet" href="css/styles.css">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1020"><meta name="description" content="Laxman AI Voice — local-first neural voice studio."><title>Laxman AI Voice</title><link rel="stylesheet" href="css/styles.css"></head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="./"><span class="brand-mark">LA</span><span>Laxman AI Voice</span></a>
-    <div class="top-actions"><span id="engineBadge" class="badge">Detecting engine…</span><button id="themeBtn" class="icon-btn" type="button" aria-label="Toggle theme">◐</button></div>
-  </header>
-
-  <main class="app-shell">
-    <section class="hero">
-      <div><p class="eyebrow">OPEN VOICE STUDIO</p><h1>Turn text into natural speech.</h1><p class="muted">A modular ElevenLabs-style workspace designed for local and open-source TTS.</p></div>
-      <div class="status-card"><span class="status-dot"></span><div><strong id="statusTitle">Ready</strong><small id="statusText">Browser fallback available</small></div></div>
-    </section>
-
-    <section class="workspace">
-      <div class="editor-card card">
-        <div class="card-head"><div><h2>Script</h2><p>Write or paste narration.</p></div><button id="clearBtn" class="ghost-btn" type="button">Clear</button></div>
-        <textarea id="textInput" maxlength="12000" placeholder="Type your narration here…\n\nExample: Namaste everyone. Welcome to Laxman AI Voice."></textarea>
-        <div class="editor-foot"><span id="counter">0 / 12,000</span><button id="sampleBtn" class="link-btn" type="button">Load sample</button></div>
-      </div>
-
-      <aside class="controls card">
-        <div class="card-head"><div><h2>Voice</h2><p>Choose an available engine voice.</p></div></div>
-        <label>Voice<select id="voiceSelect"></select></label>
-        <div class="control-grid"><label>Speed<input id="speed" type="range" min="0.5" max="2" value="1" step="0.05"><output id="speedOut">1.00×</output></label><label>Pitch<input id="pitch" type="range" min="0.5" max="1.5" value="1" step="0.05"><output id="pitchOut">1.00×</output></label></div>
-        <label>Engine<select id="engineSelect"><option value="auto">Auto</option><option value="browser">Browser fallback</option><option value="local">Local neural API</option></select></label>
-        <button id="generateBtn" class="primary-btn" type="button">Generate speech</button>
-        <p class="tiny">Neural generation requires the local FastAPI engine or a future hosted engine. The browser fallback works without an API key.</p>
-      </aside>
-    </section>
-
-    <section class="player card" id="playerCard">
-      <div class="card-head"><div><h2>Output</h2><p id="outputMeta">No audio generated yet.</p></div><button id="downloadBtn" class="ghost-btn" type="button" disabled>Download</button></div>
-      <audio id="audioPlayer" controls preload="metadata"></audio>
-      <div id="wavePlaceholder" class="wave-placeholder" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    </section>
-
-    <section class="feature-grid">
-      <article class="feature card"><span>01</span><h3>Local first</h3><p>Keep inference under your control whenever the selected model supports it.</p></article>
-      <article class="feature card"><span>02</span><h3>Model agnostic</h3><p>Swap TTS engines without rebuilding the user interface.</p></article>
-      <article class="feature card"><span>03</span><h3>Creator ready</h3><p>Designed to grow into long-form narration, scenes, projects and batch exports.</p></article>
-    </section>
-  </main>
-
-  <footer><span>© Laxman AI Voice</span><span>Open-source architecture · No paid API required</span></footer>
-  <script src="js/app.js"></script>
-</body>
-</html>
+<header class="topbar"><a class="brand" href="./"><span class="brand-mark">LA</span><span>Laxman AI Voice</span></a><div class="top-actions"><span id="engineBadge" class="badge">Detecting engine…</span><button id="themeBtn" class="icon-btn" type="button">◐</button></div></header>
+<main class="app-shell">
+<section class="hero"><div><p class="eyebrow">OPEN VOICE STUDIO · V1</p><h1>Turn text into natural speech.</h1><p class="muted">A local-first creator studio with neural TTS, browser fallback, projects and batch-ready workflows.</p></div><div class="status-card"><span class="status-dot"></span><div><strong id="statusTitle">Ready</strong><small id="statusText">Browser fallback available</small></div></div></section>
+<section class="project-bar card"><div><label>Project name<input id="projectName" value="Untitled Voice Project" maxlength="120"></label></div><button id="saveProjectBtn" class="ghost-btn">Save project</button><button id="loadProjectBtn" class="ghost-btn">Load latest</button></section>
+<section class="workspace"><div class="editor-card card"><div class="card-head"><div><h2>Script</h2><p>Write, paste or build narration.</p></div><button id="clearBtn" class="ghost-btn">Clear</button></div><textarea id="textInput" maxlength="12000" placeholder="Type your narration here…\n\nExample: Namaste everyone. Welcome to Laxman AI Voice."></textarea><div class="editor-foot"><span id="counter">0 / 12,000</span><button id="sampleBtn" class="link-btn">Load sample</button></div></div>
+<aside class="controls card"><div class="card-head"><div><h2>Voice</h2><p>Neural or browser voice.</p></div></div><label>Voice<select id="voiceSelect"></select></label><div class="control-grid"><label>Speed<input id="speed" type="range" min="0.5" max="2" value="1" step="0.05"><output id="speedOut">1.00×</output></label><label>Pitch<input id="pitch" type="range" min="0.5" max="1.5" value="1" step="0.05"><output id="pitchOut">1.00×</output></label></div><label>Engine<select id="engineSelect"><option value="auto">Auto</option><option value="browser">Browser fallback</option><option value="local">Local neural API</option></select></label><button id="generateBtn" class="primary-btn">Generate speech</button><p class="tiny">Local neural generation needs the FastAPI backend and downloaded model files. No paid API key is required.</p></aside></section>
+<section class="player card"><div class="card-head"><div><h2>Output</h2><p id="outputMeta">No audio generated yet.</p></div><button id="downloadBtn" class="ghost-btn" disabled>Download WAV</button></div><audio id="audioPlayer" controls preload="metadata"></audio><div class="wave-placeholder" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></section>
+<section class="feature-grid"><article class="feature card"><span>01</span><h3>Neural TTS</h3><p>Kokoro ONNX adapter for fast offline speech.</p></article><article class="feature card"><span>02</span><h3>Creator projects</h3><p>Save scripts and voice settings locally or through the API.</p></article><article class="feature card"><span>03</span><h3>Batch ready</h3><p>Scenes can be orchestrated client-side now and queued server-side later.</p></article><article class="feature card"><span>04</span><h3>Safe cloning boundary</h3><p>Voice cloning stays disabled until a licensed model and consent flow are verified.</p></article></section>
+</main><footer><span>© Laxman AI Voice</span><span>Open-source · local-first · no paid API required</span></footer><script src="js/app.js"></script></body></html>
