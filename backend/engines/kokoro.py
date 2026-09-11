@@ -1,67 +1,54 @@
-"""Optional Kokoro ONNX adapter.
-
-The adapter is intentionally optional: importing the backend does not require
-model packages or model weights. Install the optional dependencies and provide
-an explicitly licensed model before enabling it.
-"""
+"""Kokoro ONNX engine used for local, offline neural speech generation."""
 from __future__ import annotations
 
 import io
-import wave
 from pathlib import Path
 
 KOKORO_AVAILABLE = False
-
 try:
-    import numpy as np  # type: ignore
-    import onnxruntime as ort  # type: ignore
+    import soundfile as sf
+    from kokoro_onnx import Kokoro
     KOKORO_AVAILABLE = True
 except ImportError:
-    np = None
-    ort = None
+    Kokoro = None
+    sf = None
 
+VOICE_CATALOG = [
+    ("af_sarah", "Sarah", "en-us"), ("af_bella", "Bella", "en-us"),
+    ("af_nicole", "Nicole", "en-us"), ("af_sky", "Sky", "en-us"),
+    ("am_adam", "Adam", "en-us"), ("am_michael", "Michael", "en-us"),
+    ("bf_emma", "Emma", "en-gb"), ("bf_isabella", "Isabella", "en-gb"),
+    ("bm_george", "George", "en-gb"), ("bm_lewis", "Lewis", "en-gb"),
+    ("ff_siwis", "Siwis", "fr-fr"), ("if_sara", "Sara", "it"),
+    ("im_nicola", "Nicola", "it"), ("jf_alpha", "Alpha", "ja"),
+    ("jf_gongitsune", "Gongitsune", "ja"), ("zf_xiaobei", "Xiaobei", "cmn"),
+    ("zf_xiaoni", "Xiaoni", "cmn"), ("zm_yunjian", "Yunjian", "cmn"),
+]
+
+LANGS = {"en-us": "en-us", "en-gb": "en-gb", "fr-fr": "fr-fr", "it": "it", "ja": "ja", "cmn": "cmn"}
 
 class KokoroEngine:
-    """Thin ONNX runtime adapter boundary for Kokoro-compatible models.
-
-    Model-specific tokenization/voice handling belongs here rather than in the
-    FastAPI routes, making future model replacement straightforward.
-    """
-
     engine_id = "kokoro-onnx"
 
-    def __init__(self, model_path: str | None = None):
-        self.model_path = Path(model_path) if model_path else None
-        self.session = None
-        if KOKORO_AVAILABLE and self.model_path and self.model_path.exists():
-            self.session = ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
+    def __init__(self, model_path: str | None = None, voices_path: str | None = None):
+        self.model_path = Path(model_path) if model_path else Path("models/kokoro-v1.0.onnx")
+        self.voices_path = Path(voices_path) if voices_path else Path("models/voices-v1.0.bin")
+        self.engine = None
+        if KOKORO_AVAILABLE and self.model_path.exists() and self.voices_path.exists():
+            self.engine = Kokoro(str(self.model_path), str(self.voices_path))
 
     @property
     def ready(self) -> bool:
-        return self.session is not None
+        return self.engine is not None
 
     def voices(self) -> list[dict]:
-        return []
+        return [{"id": i, "name": n, "language": l, "engine": self.engine_id} for i, n, l in VOICE_CATALOG]
 
     def synthesize(self, text: str, voice: str, speed: float, pitch: float) -> bytes:
         if not self.ready:
-            raise RuntimeError("Kokoro model is not installed or configured.")
-        raise NotImplementedError(
-            "The model-specific Kokoro tokenizer/vocoder adapter must be configured "
-            "for the selected model package before synthesis is enabled."
-        )
-
-
-def pcm16_wav(samples: "np.ndarray", sample_rate: int) -> bytes:
-    """Utility for adapters that return mono float PCM samples."""
-    if np is None:
-        raise RuntimeError("numpy is required for PCM conversion")
-    pcm = np.clip(samples, -1.0, 1.0)
-    pcm = (pcm * 32767).astype(np.int16)
-    out = io.BytesIO()
-    with wave.open(out, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm.tobytes())
-    return out.getvalue()
+            raise RuntimeError("Kokoro model files are missing. Run scripts/download-kokoro.py first.")
+        item = next((x for x in VOICE_CATALOG if x[0] == voice), VOICE_CATALOG[0])
+        samples, sample_rate = self.engine.create(text, voice=item[0], speed=speed, lang=LANGS[item[2]])
+        out = io.BytesIO()
+        sf.write(out, samples, sample_rate, format="WAV")
+        return out.getvalue()
