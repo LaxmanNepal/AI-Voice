@@ -1,14 +1,15 @@
-from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Optional
 import io
+import os
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Laxman AI Voice API", version="0.1.0")
+from engines.kokoro import KokoroEngine
+
+app = FastAPI(title="Laxman AI Voice API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
 class GenerateRequest(BaseModel):
@@ -24,29 +25,39 @@ class TTSResult:
         self.media_type = media_type
 
 class TTSEngine:
-    """Engine interface. Replace NullEngine with a licensed local neural adapter."""
     name = "null"
-
-    def voices(self):
+    def voices(self) -> list[dict[str, Any]]:
         return []
-
     def synthesize(self, request: GenerateRequest) -> TTSResult:
         raise NotImplementedError
 
 class NullEngine(TTSEngine):
-    name = "null"
-
-    def voices(self):
-        return []
-
     def synthesize(self, request: GenerateRequest) -> TTSResult:
-        raise RuntimeError("No neural TTS model is installed. Add a licensed engine adapter in backend/engines.")
+        raise RuntimeError("No neural TTS model is installed. Configure a licensed engine in backend/engines.")
 
-engine: TTSEngine = NullEngine()
+class KokoroAdapter(TTSEngine):
+    name = "kokoro-onnx"
+    def __init__(self) -> None:
+        self.adapter = KokoroEngine(os.getenv("AI_VOICE_KOKORO_MODEL"))
+    def voices(self) -> list[dict[str, Any]]:
+        return self.adapter.voices()
+    def synthesize(self, request: GenerateRequest) -> TTSResult:
+        return TTSResult(self.adapter.synthesize(request.text, request.voice, request.speed, request.pitch))
+
+def build_engine() -> TTSEngine:
+    selected = os.getenv("AI_VOICE_ENGINE", "auto").lower()
+    if selected in {"kokoro", "kokoro-onnx"}:
+        return KokoroAdapter()
+    if selected == "null":
+        return NullEngine()
+    candidate = KokoroAdapter()
+    return candidate if candidate.adapter.ready else NullEngine()
+
+engine = build_engine()
 
 @app.get("/health")
 def health():
-    return {"ok": True, "engine": engine.name, "neural_model_installed": engine.name != "null"}
+    return {"ok": True, "engine": engine.name, "neural_model_installed": engine.name != "null" and getattr(getattr(engine, "adapter", None), "ready", False)}
 
 @app.get("/voices")
 def voices():
@@ -58,8 +69,6 @@ def generate(request: GenerateRequest):
         raise HTTPException(400, "V1 backend output is WAV. MP3 encoding will be added as a separate export stage.")
     try:
         result = engine.synthesize(request)
-    except NotImplementedError:
-        raise HTTPException(503, "No TTS engine is configured.")
-    except RuntimeError as exc:
-        raise HTTPException(503, str(exc))
+    except (NotImplementedError, RuntimeError) as exc:
+        raise HTTPException(503, str(exc)) from exc
     return StreamingResponse(io.BytesIO(result.audio), media_type=result.media_type, headers={"Content-Disposition": "attachment; filename=laxman-ai-voice.wav"})
