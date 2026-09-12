@@ -1,21 +1,30 @@
 # Laxman AI Voice
 
-A local-first, open-source AI voice studio for creators. The project now includes a real Kokoro ONNX inference path, browser fallback, project persistence, multilingual voice catalog, and safe boundaries for future cloning engines.
+A local-first, open-source AI voice studio for creators with a Nepali-first neural workflow.
 
-## What is implemented
+## Current capabilities
 
-- Responsive voice studio UI
+- Responsive glassmorphism voice studio
+- Nepali-first neural VITS engine
+- Kokoro ONNX multilingual engine path
 - Browser SpeechSynthesis fallback
-- FastAPI backend
-- Real Kokoro ONNX adapter
-- 18 multilingual Kokoro voices in the registry
-- Speed control
-- WAV generation and download
-- Project save/load via SQLite or browser localStorage fallback
-- Health and capability endpoint
-- Batch orchestration endpoint boundary
-- Safe voice-cloning boundary
-- GitHub Pages frontend deployment
+- Speed and pitch controls
+- WAV generation + optional FFmpeg MP3 export
+- Exact inline `[pause:500]` markers
+- Emphasis-safe text cleanup
+- Pronunciation dictionary with browser persistence and backend application
+- Creator presets: Documentary, News, Emotional, Story, Shorts
+- Scene timeline with per-scene generation and production controls
+- Drag/drop scene ordering and scene copy/paste
+- Browser waveform visualization
+- Roman Nepali helper and smart punctuation pauses
+- Local background-music/SFX preview mixer
+- Project save/load via SQLite
+- V8 local autosave + undo/redo + full-studio mode
+- SRT/VTT subtitle generation
+- Creator Batch ZIP with scene WAVs, combined narration, subtitles and manifest
+- OpenAI-compatible `/v1/audio/speech` endpoint
+- Safe voice-cloning boundary; cloning remains disabled until a compatible licensed model and consent workflow are verified
 
 ## Local neural setup
 
@@ -25,77 +34,84 @@ python -m venv .venv
 # Windows: .venv\\Scripts\\activate
 # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
-cd ..
-python scripts/download-kokoro.py
-cd backend
+```
+
+Prepare the Nepali model from the UI or API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/models/nepali/prepare
+```
+
+Then run the API:
+
+```bash
 uvicorn app:app --reload --port 8000
 ```
 
-The setup script downloads the Kokoro v1.0 ONNX model and voice bundle at runtime rather than committing large model artifacts to Git. The Kokoro model is published under Apache-2.0; the `kokoro-onnx` adapter is MIT according to its upstream project. Review current upstream terms before redistribution. citeturn0search15turn0search5
-
-Open `index.html` from a static server or GitHub Pages. For local development, a simple static server is recommended:
+For a static frontend:
 
 ```bash
 python -m http.server 5500
 ```
 
-Then visit `http://127.0.0.1:5500`.
+Open `http://127.0.0.1:5500` and keep the FastAPI service running on port 8000 for neural generation.
 
-## Environment
+## API highlights
 
-Copy `backend/.env.example` if desired:
+- `GET /health` — engine readiness and capabilities
+- `GET /models` — model metadata
+- `GET /voices` — voice registry
+- `GET /presets` — creator presets
+- `GET /pronunciations` — default pronunciation dictionary
+- `POST /generate` — processed WAV generation
+- `POST /scene/generate` — scene WAV with before/after pauses
+- `POST /export/mp3` — optional FFmpeg MP3 generation
+- `POST /batch/generate` — creator package ZIP
+- `POST /v1/audio/speech` — OpenAI-style local speech endpoint
+- `GET/POST/DELETE /projects` — SQLite project persistence
 
-```text
-AI_VOICE_ENGINE=auto
-AI_VOICE_KOKORO_MODEL=
-AI_VOICE_KOKORO_VOICES=
-```
+Generation requests may include:
 
-By default the adapter expects:
-
-```text
-models/kokoro-v1.0.onnx
-models/voices-v1.0.bin
+```json
+{
+  "text": "नमस्ते! AI बारे कुरा गरौँ। [pause:500]",
+  "language": "ne",
+  "voice": "nepali-vits",
+  "speed": 1.0,
+  "pronunciations": {
+    "AI": "ए आई"
+  },
+  "normalize": true
+}
 ```
 
 ## Architecture
 
 ```text
 Browser UI
+   ├── V8 Creator Studio layer
+   │     ├── waveform
+   │     ├── scenes
+   │     ├── presets
+   │     ├── autosave / undo / redo
+   │     └── browser mixer preview
    │
    ├── Browser SpeechSynthesis fallback
    │
-   └── FastAPI /generate
-           │
-           └── Engine abstraction
-                 └── Kokoro ONNX
-
-FastAPI
-   ├── /health
-   ├── /voices
-   ├── /generate
-   ├── /projects
-   ├── /batch/status
-   └── /clone (disabled until a licensed cloning model + consent flow exists)
+   └── FastAPI
+         ├── pronunciation normalization
+         ├── text normalization
+         ├── exact pause chunking
+         ├── audio processing
+         └── engine abstraction
+               ├── Nepali VITS
+               └── Kokoro ONNX
 ```
 
-## Roadmap status
+## Hosting note
 
-| Phase | Status |
-|---|---|
-| Foundation | ✅ Complete |
-| Working TTS | ✅ Complete |
-| Local neural inference | ✅ Complete |
-| Voice studio | 🟢 Core complete |
-| Multilingual registry | 🟢 Core complete |
-| Voice cloning | 🟡 Safe architecture only; no unsafe/unlicensed cloning enabled |
-| Creator Studio | 🟢 Core project workflow complete |
-| Production hardening | 🟡 PWA, automated test matrix and hosted deployment remain optional final hardening |
-
-## Important limitation
-
-GitHub Pages is static hosting. It cannot run Python neural inference. Therefore the public Pages UI uses browser speech unless `AI_VOICE_API` points at a running FastAPI service. A truly zero-server public neural mode can be added later with browser ONNX/WebGPU, but model size, browser support and download cost must be considered.
+GitHub Pages can host the UI but cannot run Python neural inference. The public static UI therefore needs `AI_VOICE_API` pointing to a running FastAPI service for real neural generation. Browser speech remains the fallback.
 
 ## Licensing policy
 
-Model weights are never silently committed to the repository. Each model must have explicit license, source and checksum metadata. Voice cloning is deliberately disabled until an appropriate model and a consent/ownership workflow are verified.
+Model weights are not committed to this repository. Each model should retain its upstream license/source information. Voice cloning is intentionally disabled until model licensing, consent, ownership and anti-impersonation safeguards are verified.
