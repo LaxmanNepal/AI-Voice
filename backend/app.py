@@ -2,19 +2,20 @@ import io
 import os
 import zipfile
 import json
+import re
 from typing import Any
 import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from engines.kokoro import KokoroEngine
 from engines.nepali_vits import NepaliVITSEngine
 from storage import delete_project, list_projects, save_project
 from text_normalizer import normalize_text, split_scenes
 
-app = FastAPI(title="Laxman AI Voice API", version="2.3.0")
+app = FastAPI(title="Laxman AI Voice API", version="2.4.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
 class GenerateRequest(BaseModel):
@@ -27,6 +28,8 @@ class GenerateRequest(BaseModel):
 
 class SceneRequest(GenerateRequest):
     scene_id: str = Field(default="scene-001", min_length=1, max_length=80)
+    pause_before_ms: int = Field(default=0, ge=0, le=5000)
+    pause_after_ms: int = Field(default=0, ge=0, le=5000)
 
 class BatchRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100000)
@@ -35,6 +38,7 @@ class BatchRequest(BaseModel):
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     max_chars: int = Field(default=900, ge=200, le=2000)
     silence_ms: int = Field(default=350, ge=0, le=3000)
+    preset: str = Field(default="documentary", max_length=40)
 
 class ProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -72,38 +76,65 @@ def select_engine(request: GenerateRequest):
     if kokoro_engine.adapter.ready: return kokoro_engine
     raise RuntimeError("Kokoro model is not installed for this language.")
 
-def fmt_srt_time(seconds: float) -> str:
-    ms = max(0, int(round(seconds * 1000)))
-    h, ms = divmod(ms, 3600000); m, ms = divmod(ms, 60000); s, ms = divmod(ms, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+def clean_markers(text: str):
+    pauses = []
+    def repl(match):
+        pauses.append(int(match.group(1))); return " "
+    cleaned = re.sub(r"\[pause\s*:\s*(\d{1,4})\]", repl, text, flags=re.I)
+    cleaned = re.sub(r"\[/?emphasis\]", "", cleaned, flags=re.I)
+    return cleaned.strip(), pauses
 
-def fmt_vtt_time(seconds: float) -> str:
+def fmt_time(seconds: float, comma: bool = True) -> str:
     ms = max(0, int(round(seconds * 1000)))
     h, ms = divmod(ms, 3600000); m, ms = divmod(ms, 60000); s, ms = divmod(ms, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+    return f"{h:02d}:{m:02d}:{s:02d}{',' if comma else '.'}{ms:03d}"
 
 def timeline_files(timeline):
-    srt = "\n\n".join(f"{i}\n{fmt_srt_time(start)} --> {fmt_srt_time(end)}\n{scene}" for i,(start,end,scene) in enumerate(timeline,1)) + "\n"
-    vtt = "WEBVTT\n\n" + "\n\n".join(f"{i}\n{fmt_vtt_time(start)} --> {fmt_vtt_time(end)}\n{scene}" for i,(start,end,scene) in enumerate(timeline,1)) + "\n"
+    srt = "\n\n".join(f"{i}\n{fmt_time(a)} --> {fmt_time(b)}\n{s}" for i,(a,b,s) in enumerate(timeline,1)) + "\n"
+    vtt = "WEBVTT\n\n" + "\n\n".join(f"{i}\n{fmt_time(a,False)} --> {fmt_time(b,False)}\n{s}" for i,(a,b,s) in enumerate(timeline,1)) + "\n"
     return srt, vtt
+
+def make_silence(sr, ms): return np.zeros(max(0, int(sr * ms / 1000)), dtype=np.float32)
+
+def synth_scene(text, voice, language, speed, pitch):
+    cleaned, marker_pauses = clean_markers(text)
+    request = GenerateRequest(text=cleaned, voice=voice, language=language, speed=speed, pitch=pitch)
+    normalized = normalize_text(cleaned, language.lower().split("-")[0])
+    request.text = normalized
+    result = select_engine(request).synthesize(request)
+    data, sr = sf.read(io.BytesIO(result.audio), dtype="float32", always_2d=False)
+    data = np.asarray(data)
+    if data.ndim > 1: data = data.mean(axis=1)
+    return data, sr, marker_pauses
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.3.0", "engines": {"nepali_vits": {"ready": nepali_engine.adapter.ready, "loading": nepali_engine.adapter.loading, "error": nepali_engine.adapter.error}, "kokoro": kokoro_engine.adapter.ready}, "features": {"tts": True, "projects": True, "batch": True, "scene_generate": True, "srt": True, "vtt": True, "combined_wav": True, "openai_compatible": True, "voice_cloning": False}}
+    return {"ok": True, "version": "2.4.0", "engines": {"nepali_vits": {"ready": nepali_engine.adapter.ready, "loading": nepali_engine.adapter.loading, "error": nepali_engine.adapter.error}, "kokoro": kokoro_engine.adapter.ready}, "features": {"tts": True, "projects": True, "batch": True, "scene_generate": True, "pause_markers": True, "emphasis_markers": True, "presets": True, "srt": True, "vtt": True, "combined_wav": True, "openai_compatible": True, "voice_cloning": False}}
 
 @app.get("/models")
 def models():
     return {"models": [{"id":"nepali-vits","type":"tts","language":"ne-NP","license":"MIT","checkpoint":"G_100000.pth","ready":nepali_engine.adapter.ready,"loading":nepali_engine.adapter.loading,"error":nepali_engine.adapter.error},{"id":"kokoro-onnx","type":"tts","languages":["en","fr","it","ja","cmn"],"license":"MIT package / Apache-2.0 model","ready":kokoro_engine.adapter.ready}]}
 
-@app.post("/models/nepali/prepare")
-def prepare_nepali(): return nepali_engine.adapter.prepare()
+@app.get("/presets")
+def presets():
+    return {"presets":[
+        {"id":"documentary","name":"Documentary","speed":0.95,"silence_ms":500,"description":"Slower, cinematic narration with breathing room."},
+        {"id":"news","name":"News","speed":1.08,"silence_ms":280,"description":"Crisp pacing for news and current affairs."},
+        {"id":"youtube","name":"YouTube","speed":1.0,"silence_ms":350,"description":"Balanced creator narration."},
+        {"id":"shorts","name":"Shorts / Reels","speed":1.18,"silence_ms":180,"description":"Fast pacing for short-form videos."},
+        {"id":"education","name":"Education","speed":0.92,"silence_ms":450,"description":"Clear and comfortable learning pace."}
+    ]}
 
 @app.get("/voices")
 def voices(): return {"voices": nepali_engine.voices() + kokoro_engine.voices()}
 
+@app.post("/models/nepali/prepare")
+def prepare_nepali(): return nepali_engine.adapter.prepare()
+
 @app.post("/generate")
 def generate(request: GenerateRequest):
     if request.format.lower() not in {"wav", "wave"}: raise HTTPException(400, "Local output is WAV.")
+    request.text, _ = clean_markers(request.text)
     request.text = normalize_text(request.text, request.language.lower().split("-")[0])
     try: result = select_engine(request).synthesize(request)
     except (NotImplementedError, RuntimeError) as exc: raise HTTPException(503, str(exc)) from exc
@@ -111,42 +142,47 @@ def generate(request: GenerateRequest):
 
 @app.post("/scene/generate")
 def scene_generate(request: SceneRequest):
-    request.text = normalize_text(request.text, request.language.lower().split("-")[0])
-    if not request.text: raise HTTPException(400, "Scene has no usable text.")
-    try: result = select_engine(request).synthesize(request)
+    try: data, sr, marker_pauses = synth_scene(request.text, request.voice, request.language, request.speed, request.pitch)
     except (NotImplementedError, RuntimeError) as exc: raise HTTPException(503, str(exc)) from exc
-    data, sr = sf.read(io.BytesIO(result.audio), dtype="float32", always_2d=False)
-    duration = len(data) / sr if len(data) else 0
-    return StreamingResponse(io.BytesIO(result.audio), media_type="audio/wav", headers={"Content-Disposition": f"attachment; filename={request.scene_id}.wav", "X-Audio-Duration": f"{duration:.3f}", "X-Sample-Rate": str(sr), "Access-Control-Expose-Headers": "X-Audio-Duration,X-Sample-Rate"})
+    parts = []
+    if request.pause_before_ms: parts.append(make_silence(sr, request.pause_before_ms))
+    parts.append(data)
+    for pause in marker_pauses: parts.append(make_silence(sr, pause))
+    if request.pause_after_ms: parts.append(make_silence(sr, request.pause_after_ms))
+    audio = np.concatenate(parts) if parts else data
+    out = io.BytesIO(); sf.write(out, audio, sr, format="WAV"); out.seek(0)
+    duration = len(audio) / sr if len(audio) else 0
+    return StreamingResponse(out, media_type="audio/wav", headers={"Content-Disposition": f"attachment; filename={request.scene_id}.wav", "X-Audio-Duration": f"{duration:.3f}", "X-Sample-Rate": str(sr), "Access-Control-Expose-Headers": "X-Audio-Duration,X-Sample-Rate"})
 
 @app.post("/batch/generate")
 def batch_generate(request: BatchRequest):
-    scenes = split_scenes(normalize_text(request.text, request.language.lower().split("-")[0]), request.max_chars)
-    if not scenes: raise HTTPException(400, "No usable text found.")
-    if len(scenes) > 120: raise HTTPException(400, "Batch limited to 120 scenes per request.")
-    generated: list[tuple[str, bytes]] = []
-    timeline: list[tuple[float,float,str]] = []
-    combined_parts=[]; sample_rate=None; elapsed=0.0
-    for i, scene in enumerate(scenes, 1):
-        single=GenerateRequest(text=scene, voice=request.voice, language=request.language, speed=request.speed)
-        try: audio=select_engine(single).synthesize(single).audio
-        except RuntimeError as exc: raise HTTPException(503, str(exc)) from exc
-        generated.append((f"scene-{i:03d}.wav", audio))
-        data, sr=sf.read(io.BytesIO(audio), dtype="float32", always_2d=False); data=np.asarray(data)
-        if data.ndim>1: data=data.mean(axis=1)
-        sample_rate=sample_rate or sr; duration=len(data)/sr
-        timeline.append((elapsed, elapsed+duration, scene)); combined_parts.append(data); elapsed += duration
-        if i < len(scenes) and request.silence_ms:
-            combined_parts.append(np.zeros(int(sr*request.silence_ms/1000),dtype=np.float32)); elapsed += request.silence_ms/1000
-    full=io.BytesIO(); sf.write(full,np.concatenate(combined_parts),sample_rate,format="WAV"); full.seek(0)
-    srt, vtt = timeline_files(timeline)
-    scenes_txt="\n\n".join(f"[{i:03d}] {s}" for i,s in enumerate(scenes,1))
-    manifest={"version":"2.3","scenes":len(scenes),"silence_ms":request.silence_ms,"language":request.language,"voice":request.voice,"total_duration_seconds":round(elapsed,3),"timeline":[{"id":i,"start":round(a,3),"end":round(b,3),"text":s} for i,(a,b,s) in enumerate(timeline,1)]}
+    presets = {"documentary":(0.95,500),"news":(1.08,280),"youtube":(1.0,350),"shorts":(1.18,180),"education":(0.92,450)}
+    if request.preset in presets:
+        preset_speed, preset_pause = presets[request.preset]
+        if request.speed == 1.0: request.speed = preset_speed
+        if request.silence_ms == 350: request.silence_ms = preset_pause
+    raw_scenes = split_scenes(normalize_text(request.text, request.language.lower().split("-")[0]), request.max_chars)
+    if not raw_scenes: raise HTTPException(400, "No usable text found.")
+    if len(raw_scenes) > 120: raise HTTPException(400, "Batch limited to 120 scenes per request.")
+    generated=[]; timeline=[]; combined=[]; sr=None; elapsed=0.0
+    for i, scene in enumerate(raw_scenes, 1):
+        try: data, scene_sr, _ = synth_scene(scene, request.voice, request.language, request.speed, 1.0)
+        except (NotImplementedError, RuntimeError) as exc: raise HTTPException(503, str(exc)) from exc
+        sr = sr or scene_sr
+        if scene_sr != sr: raise HTTPException(500, "Scene sample rates do not match.")
+        duration=len(data)/sr
+        generated_out=io.BytesIO(); sf.write(generated_out,data,sr,format="WAV")
+        generated.append((f"scene-{i:03d}.wav",generated_out.getvalue()))
+        timeline.append((elapsed,elapsed+duration,scene)); combined.append(data); elapsed += duration
+        if i < len(raw_scenes) and request.silence_ms: combined.append(make_silence(sr,request.silence_ms)); elapsed += request.silence_ms/1000
+    full=io.BytesIO(); sf.write(full,np.concatenate(combined),sr,format="WAV"); full.seek(0)
+    srt,vtt=timeline_files(timeline)
+    manifest={"version":"2.4","preset":request.preset,"scenes":len(raw_scenes),"silence_ms":request.silence_ms,"language":request.language,"voice":request.voice,"speed":request.speed,"total_duration_seconds":round(elapsed,3),"timeline":[{"id":i,"start":round(a,3),"end":round(b,3),"text":s} for i,(a,b,s) in enumerate(timeline,1)]}
     out=io.BytesIO()
     with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("full-narration.wav",full.getvalue())
         for filename,audio in generated: archive.writestr(filename,audio)
-        archive.writestr("subtitles.srt",srt); archive.writestr("subtitles.vtt",vtt); archive.writestr("scenes.txt",scenes_txt); archive.writestr("manifest.json",json.dumps(manifest,ensure_ascii=False,indent=2))
+        archive.writestr("subtitles.srt",srt); archive.writestr("subtitles.vtt",vtt); archive.writestr("scenes.txt","\n\n".join(f"[{i:03d}] {s}" for i,s in enumerate(raw_scenes,1))); archive.writestr("manifest.json",json.dumps(manifest,ensure_ascii=False,indent=2))
     out.seek(0)
     return StreamingResponse(out,media_type="application/zip",headers={"Content-Disposition":"attachment; filename=laxman-ai-voice-creator-batch.zip"})
 
@@ -159,6 +195,6 @@ def create_project(request: ProjectRequest): return {"id": save_project(request.
 @app.delete("/projects/{project_id}")
 def remove_project(project_id: int): delete_project(project_id); return {"ok": True}
 @app.get("/batch/status")
-def batch_status(): return {"supported": True, "mode": "server-side-scene-queue", "max_text_per_job": 100000, "max_scenes": 120, "outputs":["full-narration.wav","scene-wavs","subtitles.srt","subtitles.vtt","scenes.txt","manifest.json"]}
+def batch_status(): return {"supported": True,"mode":"server-side-scene-queue","max_text_per_job":100000,"max_scenes":120,"outputs":["full-narration.wav","scene-wavs","subtitles.srt","subtitles.vtt","scenes.txt","manifest.json"]}
 @app.post("/clone")
-def clone_voice(): raise HTTPException(501, "Voice cloning is disabled until a compatible licensed model and consent workflow are enabled.")
+def clone_voice(): raise HTTPException(501,"Voice cloning is disabled until a compatible licensed model and consent workflow are enabled.")
